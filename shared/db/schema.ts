@@ -4,6 +4,7 @@ import {
     check,
     index,
     integer,
+    jsonb,
     pgEnum,
     pgTable,
     text,
@@ -14,6 +15,20 @@ import {
     type AnyPgColumn,
 } from "drizzle-orm/pg-core";
 import { relations, sql } from "drizzle-orm";
+
+// ========= TELEGRAM =========
+// Mirrors telegram MessageEntity; offsets/lengths are in UTF-16 code units of `text`
+export type MessageEntity = {
+    type: string;
+    offset: number;
+    length: number;
+    url?: string; // text_link
+    user?: { id: number; is_bot: boolean; first_name: string }; // text_mention
+    language?: string; // pre
+    custom_emoji_id?: string; // custom_emoji
+    unix_time?: number; // date_time
+    date_time_format?: string; // date_time
+};
 
 // ========= ADMINS =========
 // Web app logs in with login + password; bot treats `telegramUserId` as admin and never stores those chats.
@@ -125,8 +140,9 @@ export const messagesTable = pgTable(
         direction: messageDirectionEnum().notNull(),
         type: messageTypeEnum().notNull(),
 
-        // text body for `text`, caption for `media`
+        // text body for `text`, caption for `media`; formatting is kept as telegram entities over it
         text: text(),
+        entities: jsonb().$type<MessageEntity[]>(),
 
         // media & sticker payload; telegram file_id is reusable by the same bot for re-sending
         mediaKind: mediaKindEnum("media_kind"),
