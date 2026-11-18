@@ -15,6 +15,23 @@ import {
 } from "drizzle-orm/pg-core";
 import { relations, sql } from "drizzle-orm";
 
+// ========= ADMINS =========
+// Web app logs in with login + password; bot treats `telegramUserId` as admin and never stores those chats.
+export const adminsTable = pgTable("admins", {
+    id: uuid().primaryKey().defaultRandom(),
+
+    login: varchar({ length: 64 }).notNull().unique(),
+    passwordHash: varchar("password_hash", { length: 256 }).notNull(),
+    telegramUserId: bigint("telegram_user_id", { mode: "number" }).unique(),
+
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+        .notNull()
+        .defaultNow()
+        .$onUpdateFn(() => new Date()),
+});
+export type AdminsTable = typeof adminsTable;
+
 // ========= CONVERSATIONS =========
 export const ConversationStatuses = {
     active: "active",
