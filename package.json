@@ -17,7 +17,8 @@
         "bot:start": "npm run start --workspace=bot",
         "db:generate": "npm run db:generate --workspace=shared/db",
         "db:migrate": "npm run db:migrate --workspace=shared/db",
-        "db:studio": "npm run db:studio --workspace=shared/db"
+        "db:studio": "npm run db:studio --workspace=shared/db",
+        "admin:create": "npm run admin:create --workspace=shared/db --"
     },
     "devDependencies": {
         "prettier": "^3.8.1",
