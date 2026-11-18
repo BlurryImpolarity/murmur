@@ -1,0 +1,26 @@
+{
+    "name": "murmur",
+    "private": true,
+    "workspaces": [
+        "shared/*",
+        "next-app",
+        "bot"
+    ],
+    "scripts": {
+        "format": "npm run format --workspaces --if-present",
+        "format:check": "npm run format:check --workspaces --if-present",
+        "next:dev": "npm run dev --workspace=next-app",
+        "next:build": "npm run build --workspace=next-app",
+        "next:start": "npm run start --workspace=next-app",
+        "bot:dev": "npm run dev --workspace=bot",
+        "bot:build": "npm run build --workspace=bot",
+        "bot:start": "npm run start --workspace=bot",
+        "db:generate": "npm run db:generate --workspace=shared/db",
+        "db:migrate": "npm run db:migrate --workspace=shared/db",
+        "db:studio": "npm run db:studio --workspace=shared/db"
+    },
+    "devDependencies": {
+        "prettier": "^3.8.1",
+        "typescript": "^6.0.3"
+    }
+}
