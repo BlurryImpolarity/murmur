@@ -14,13 +14,15 @@ import { db } from "./db";
 import { env } from "./env";
 
 const BATCH_SIZE = 20;
+const BACKOFF_FACTOR = 1.5;
 
 type OutgoingMessage = MessagesTable["$inferSelect"] & {
     conversation: ConversationsTable["$inferSelect"];
     replyTo: MessagesTable["$inferSelect"] | null;
 };
 
-// Polls `pending` messages created by the web app and delivers them
+// Polls `pending` messages created by the web app and delivers them.
+// Interval is adaptive: drops to the minimum once something was sent, then grows back to the default.
 export async function startOutbox(telegram: Telegram): Promise<() => void> {
     // messages left in `sending` after a crash may or may not have been delivered; don't resend blindly
     await db
@@ -28,25 +30,32 @@ export async function startOutbox(telegram: Telegram): Promise<() => void> {
         .set({ status: MessageStatuses.failed, error: "interrupted while sending" })
         .where(eq(messagesTable.status, MessageStatuses.sending));
 
-    let running = false;
-    const timer = setInterval(async () => {
-        if (running) return;
-        running = true;
+    let interval = env.outboxIntervalMs;
+    let timer: NodeJS.Timeout | undefined;
+    let stopped = false;
+
+    const tick = async () => {
         try {
-            await flush(telegram);
+            const sent = await flush(telegram);
+            interval = sent > 0 ? env.outboxMinIntervalMs : Math.min(env.outboxIntervalMs, interval * BACKOFF_FACTOR);
         } catch (err) {
             console.error("outbox flush failed", err);
-        } finally {
-            running = false;
+            interval = env.outboxIntervalMs;
         }
-    }, env.outboxIntervalMs);
+        if (!stopped) timer = setTimeout(tick, interval);
+    };
+    timer = setTimeout(tick, interval);
 
-    return () => clearInterval(timer);
+    return () => {
+        stopped = true;
+        clearTimeout(timer);
+    };
 }
 
-async function flush(telegram: Telegram) {
+// returns how many messages were processed
+async function flush(telegram: Telegram): Promise<number> {
     const ids = await claim();
-    if (!ids.length) return;
+    if (!ids.length) return 0;
 
     const messages = await db.query.messagesTable.findMany({
         where: inArray(messagesTable.id, ids),
@@ -76,6 +85,7 @@ async function flush(telegram: Telegram) {
                 .where(eq(messagesTable.id, message.id));
         }
     }
+    return messages.length;
 }
 
 // Atomically moves a batch of `pending` messages to `sending`, safe with multiple bot instances
