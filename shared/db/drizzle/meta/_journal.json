@@ -15,6 +15,20 @@
       "when": 1795037058605,
       "tag": "0001_slim_morg",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1795042908024,
+      "tag": "0002_conscious_korvac",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1795043631751,
+      "tag": "0003_talented_kitty_pryde",
+      "breakpoints": true
     }
   ]
 }

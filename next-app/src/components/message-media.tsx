@@ -20,7 +20,8 @@ export function MessageMedia({ message }: { message: Message }) {
     if (!message.fileId) return null;
     const src = fileUrl(message.fileId);
 
-    if (message.type === "sticker") return <Sticker src={src} emoji={message.stickerEmoji} />;
+    if (message.type === "sticker")
+        return <Sticker src={src} emoji={message.stickerEmoji} mimeType={message.mimeType} />;
 
     switch (message.mediaKind) {
         case "photo":

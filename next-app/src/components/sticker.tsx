@@ -3,10 +3,19 @@
 import { useEffect, useRef, useState } from "react";
 import { cn } from "@/lib/utils";
 
-type Loaded = { kind: "image" | "video"; url: string } | { kind: "lottie" };
+const TGS = "application/x-tgsticker";
 
-// Sticker format (webp / webm / tgs) is detected from the served file, so stickers saved without a mime type work too
-export function Sticker({ src, emoji, className }: { src: string; emoji?: string | null; className?: string }) {
+type Loaded = { kind: "image" | "video"; url: string } | { kind: "lottie"; animationData: unknown };
+
+type Props = {
+    src: string;
+    emoji?: string | null;
+    // stored format, when known; otherwise taken from the served file's content type
+    mimeType?: string | null;
+    className?: string;
+};
+
+export function Sticker({ src, emoji, mimeType, className }: Props) {
     const [loaded, setLoaded] = useState<Loaded | null>(null);
     const [failed, setFailed] = useState(false);
     const lottieContainer = useRef<HTMLDivElement>(null);
@@ -14,32 +23,18 @@ export function Sticker({ src, emoji, className }: { src: string; emoji?: string
     useEffect(() => {
         let cancelled = false;
         let objectUrl: string | undefined;
-        let destroyAnimation: (() => void) | undefined;
 
         (async () => {
             const response = await fetch(src);
             if (!response.ok) throw new Error(`HTTP ${response.status}`);
-            const type = response.headers.get("content-type") ?? "";
+            const type = mimeType || response.headers.get("content-type") || "";
 
-            if (type === "application/x-tgsticker") {
+            if (type === TGS) {
                 // animated stickers are gzipped lottie json
-                const [{ default: lottie }, animationData] = await Promise.all([
-                    import("lottie-web/build/player/lottie_light"),
-                    new Response(response.body!.pipeThrough(new DecompressionStream("gzip"))).json(),
-                ]);
-                if (cancelled) return;
-                setLoaded({ kind: "lottie" });
-                // container renders after state update
-                await new Promise(requestAnimationFrame);
-                if (cancelled || !lottieContainer.current) return;
-                const animation = lottie.loadAnimation({
-                    container: lottieContainer.current,
-                    renderer: "svg",
-                    loop: true,
-                    autoplay: true,
-                    animationData,
-                });
-                destroyAnimation = () => animation.destroy();
+                const animationData = await new Response(
+                    response.body!.pipeThrough(new DecompressionStream("gzip"))
+                ).json();
+                if (!cancelled) setLoaded({ kind: "lottie", animationData });
                 return;
             }
 
@@ -50,10 +45,37 @@ export function Sticker({ src, emoji, className }: { src: string; emoji?: string
 
         return () => {
             cancelled = true;
-            destroyAnimation?.();
             if (objectUrl) URL.revokeObjectURL(objectUrl);
         };
-    }, [src]);
+    }, [src, mimeType]);
+
+    // runs after the lottie container is committed, so the ref is always set here
+    const animationData = loaded?.kind === "lottie" ? loaded.animationData : null;
+    useEffect(() => {
+        if (!animationData || !lottieContainer.current) return;
+        const container = lottieContainer.current;
+        let destroy: (() => void) | undefined;
+        let cancelled = false;
+
+        import("lottie-web/build/player/lottie_light")
+            .then(({ default: lottie }) => {
+                if (cancelled) return;
+                const animation = lottie.loadAnimation({
+                    container,
+                    renderer: "svg",
+                    loop: true,
+                    autoplay: true,
+                    animationData,
+                });
+                destroy = () => animation.destroy();
+            })
+            .catch(() => !cancelled && setFailed(true));
+
+        return () => {
+            cancelled = true;
+            destroy?.();
+        };
+    }, [animationData]);
 
     const title = emoji ?? undefined;
     const classes = cn("block size-36 object-contain", className);

@@ -12,6 +12,7 @@ import {
 } from "@murmur/db";
 import { and, eq } from "drizzle-orm";
 import { db } from "./db";
+import { stickerMimeType } from "./sticker-format";
 import type { BotContext } from "./context";
 
 type MessageContent = Pick<
@@ -147,11 +148,7 @@ function parseMessage(message: Message): MessageContent | null {
             fileUniqueId: message.sticker.file_unique_id,
             fileSize: message.sticker.file_size ?? null,
             // lets the web app pick img / video / emoji fallback
-            mimeType: message.sticker.is_video
-                ? "video/webm"
-                : message.sticker.is_animated
-                  ? "application/x-tgsticker"
-                  : "image/webp",
+            mimeType: stickerMimeType(message.sticker),
             stickerEmoji: message.sticker.emoji ?? null,
         };
     }

@@ -4,6 +4,8 @@ import { count, eq } from "drizzle-orm";
 import { db } from "./db";
 import type { BotContext } from "./context";
 import { groupReply } from "./group-reply";
+import { clearPending } from "./pending";
+import { stickers } from "./stickers";
 
 // Resolves ctx.admin by telegram user id
 export const loadAdmin: MiddlewareFn<BotContext> = async (ctx, next) => {
@@ -16,7 +18,11 @@ export const loadAdmin: MiddlewareFn<BotContext> = async (ctx, next) => {
 // Admin chats are handled here and never stored in conversations
 export const adminComposer = new Composer<BotContext>();
 
-adminComposer.start((ctx) => ctx.reply(`Admin mode, ${ctx.admin!.login}. Commands: /ping, /stats, /reply`));
+adminComposer.start((ctx) =>
+    ctx.reply(
+        `Admin mode, ${ctx.admin!.login}. Commands: /ping, /stats, /reply, /addpack, /addsticker, /stickers, /cancel`
+    )
+);
 
 adminComposer.command("ping", (ctx) => ctx.reply(`Pong (admin: ${ctx.admin!.login})`));
 
@@ -29,6 +35,9 @@ adminComposer.command("stats", async (ctx) => {
     await ctx.reply(`Conversations: ${conversations.n}\nPending: ${pending.n}\nFailed: ${failed.n}`);
 });
 
-adminComposer.use(groupReply);
+// drops whatever command is waiting for the next message (/reply, /addpack, /addsticker)
+adminComposer.command("cancel", (ctx) => ctx.reply(clearPending(ctx.from.id) ? "Cancelled" : "Nothing to cancel"));
+
+adminComposer.use(groupReply, stickers);
 
 adminComposer.on("message", (ctx) => ctx.reply("Admin chat is not stored. Use the web app to reply to people"));

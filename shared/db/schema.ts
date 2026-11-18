@@ -189,6 +189,64 @@ export const messagesTable = pgTable(
 );
 export type MessagesTable = typeof messagesTable;
 
+// ========= STICKERS =========
+// Saved stickers admins can send later: whole telegram packs or custom collections (favorites, uncategorized, ...)
+export const StickerCollectionKinds = {
+    pack: "pack", // imported telegram sticker set
+    custom: "custom",
+} as const;
+export type StickerCollectionKind = keyof typeof StickerCollectionKinds;
+
+export const stickerCollectionKindEnum = pgEnum("STICKER_COLLECTION_KIND", StickerCollectionKinds);
+
+export const stickerCollectionsTable = pgTable(
+    "sticker_collections",
+    {
+        id: uuid().primaryKey().defaultRandom(),
+
+        kind: stickerCollectionKindEnum().notNull(),
+        // telegram set name for packs, slug for custom collections (e.g. "favorites")
+        name: varchar({ length: 64 }).notNull(),
+        title: varchar({ length: 256 }).notNull(),
+
+        createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+        updatedAt: timestamp("updated_at", { withTimezone: true })
+            .notNull()
+            .defaultNow()
+            .$onUpdateFn(() => new Date()),
+    },
+    (table) => [unique("sticker_collections_kind_name_unique").on(table.kind, table.name)]
+);
+export type StickerCollectionsTable = typeof stickerCollectionsTable;
+
+export const stickersTable = pgTable(
+    "stickers",
+    {
+        id: uuid().primaryKey().defaultRandom(),
+        collectionId: uuid("collection_id")
+            .references(() => stickerCollectionsTable.id, { onDelete: "cascade" })
+            .notNull(),
+
+        fileId: varchar("file_id", { length: 256 }).notNull(),
+        fileUniqueId: varchar("file_unique_id", { length: 64 }).notNull(),
+        // image/webp, video/webm or application/x-tgsticker
+        mimeType: varchar("mime_type", { length: 64 }).notNull(),
+        // small static preview (webp/jpg) for pickers, when telegram provides one
+        thumbnailFileId: varchar("thumbnail_file_id", { length: 256 }),
+        emoji: varchar({ length: 16 }),
+        // telegram set the sticker comes from, if any
+        setName: varchar("set_name", { length: 64 }),
+        position: integer().notNull().default(0),
+
+        createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    },
+    (table) => [
+        unique("stickers_collection_file_unique").on(table.collectionId, table.fileUniqueId),
+        index("stickers_collection_position_idx").on(table.collectionId, table.position),
+    ]
+);
+export type StickersTable = typeof stickersTable;
+
 // ========= RELATIONS =========
 export const conversationsRelations = relations(conversationsTable, ({ many }) => ({
     messages: many(messagesTable),
@@ -202,5 +260,16 @@ export const messagesRelations = relations(messagesTable, ({ one }) => ({
     replyTo: one(messagesTable, {
         fields: [messagesTable.replyToId],
         references: [messagesTable.id],
+    }),
+}));
+
+export const stickerCollectionsRelations = relations(stickerCollectionsTable, ({ many }) => ({
+    stickers: many(stickersTable),
+}));
+
+export const stickersRelations = relations(stickersTable, ({ one }) => ({
+    collection: one(stickerCollectionsTable, {
+        fields: [stickersTable.collectionId],
+        references: [stickerCollectionsTable.id],
     }),
 }));

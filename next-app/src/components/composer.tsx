@@ -1,10 +1,11 @@
 "use client";
 
 import { useEffect, useRef, useState, useTransition } from "react";
-import { SendIcon } from "lucide-react";
+import { SendIcon, StickerIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import { sendTextMessage } from "@/app/(chat)/actions";
+import { StickerPicker } from "@/components/sticker-picker";
+import { sendSticker, sendTextMessage } from "@/app/(chat)/actions";
 
 // Uncontrolled textarea: the value is read from the DOM on submit, so sending doesn't depend on React state.
 // `empty` only drives the button's disabled look and is re-synced from the DOM on mount and every input.
@@ -12,6 +13,7 @@ export function Composer({ conversationId, disabled }: { conversationId: string;
     const textarea = useRef<HTMLTextAreaElement>(null);
     const [error, setError] = useState<string | null>(null);
     const [empty, setEmpty] = useState(true);
+    const [stickersOpen, setStickersOpen] = useState(false);
     const syncEmpty = () => setEmpty(!textarea.current?.value.trim());
 
     // picks up text typed before hydration
@@ -39,16 +41,40 @@ export function Composer({ conversationId, disabled }: { conversationId: string;
         });
     };
 
+    const submitSticker = (stickerId: string) => {
+        setError(null);
+        startTransition(async () => {
+            try {
+                await sendSticker(conversationId, stickerId);
+            } catch (err) {
+                setError(err instanceof Error ? err.message : "Failed to send");
+            }
+        });
+    };
+
     return (
         <form
             onSubmit={(event) => {
                 event.preventDefault();
                 submit();
             }}
-            className="shrink-0 border-t p-2 pb-[max(0.5rem,env(safe-area-inset-bottom))]"
+            className="shrink-0 border-t"
         >
-            {error && <p className="px-1 pb-1 text-xs text-destructive">{error}</p>}
-            <div className="flex items-end gap-2">
+            {stickersOpen && !disabled && <StickerPicker onSelect={submitSticker} />}
+            {error && <p className="px-3 pt-2 text-xs text-destructive">{error}</p>}
+            <div className="flex items-end gap-2 p-2 pb-[max(0.5rem,env(safe-area-inset-bottom))]">
+                <Button
+                    type="button"
+                    size="icon-lg"
+                    variant={stickersOpen ? "secondary" : "ghost"}
+                    disabled={disabled}
+                    aria-label="Stickers"
+                    aria-pressed={stickersOpen}
+                    onPointerDown={(event) => event.preventDefault()}
+                    onClick={() => setStickersOpen((open) => !open)}
+                >
+                    <StickerIcon />
+                </Button>
                 <Textarea
                     ref={textarea}
                     onInput={syncEmpty}
