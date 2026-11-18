@@ -18,6 +18,7 @@ type MessageContent = Pick<
     MessagesTable["$inferInsert"],
     | "type"
     | "text"
+    | "entities"
     | "mediaKind"
     | "mediaGroupId"
     | "fileId"
@@ -120,6 +121,7 @@ async function fetchProfilePhoto(ctx: BotContext, user: User): Promise<string | 
 
 function parseMessage(message: Message): MessageContent | null {
     const caption = "caption" in message ? (message.caption ?? null) : null;
+    const captionEntities = "caption_entities" in message ? (message.caption_entities ?? null) : null;
     const mediaGroupId = "media_group_id" in message ? (message.media_group_id ?? null) : null;
     const media = (
         mediaKind: MessageContent["mediaKind"],
@@ -127,6 +129,7 @@ function parseMessage(message: Message): MessageContent | null {
     ): MessageContent => ({
         type: MessageTypes.media,
         text: caption,
+        entities: captionEntities,
         mediaKind,
         mediaGroupId,
         fileId: file.file_id,
@@ -136,7 +139,7 @@ function parseMessage(message: Message): MessageContent | null {
         fileSize: file.file_size ?? null,
     });
 
-    if ("text" in message) return { type: MessageTypes.text, text: message.text };
+    if ("text" in message) return { type: MessageTypes.text, text: message.text, entities: message.entities ?? null };
     if ("sticker" in message) {
         return {
             type: MessageTypes.sticker,

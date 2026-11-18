@@ -1,4 +1,5 @@
 import type { Telegram } from "telegraf-hardened";
+import type { MessageEntity } from "telegraf-hardened/types";
 import {
     ConversationStatuses,
     MediaKinds,
@@ -105,16 +106,18 @@ async function send(telegram: Telegram, message: OutgoingMessage): Promise<{ mes
         ? { reply_parameters: { message_id: message.replyTo.telegramMessageId, allow_sending_without_reply: true } }
         : {};
 
+    const entities = (message.entities ?? undefined) as MessageEntity[] | undefined;
+
     switch (message.type) {
         case MessageTypes.text:
-            return telegram.sendMessage(chatId, message.text!, extra);
+            return telegram.sendMessage(chatId, message.text!, { ...extra, entities });
         case MessageTypes.sticker:
             return telegram.sendSticker(chatId, message.fileId!, extra);
         case MessageTypes.media: {
             // TODO: web app uploads have no telegram file_id yet, needs storage
             if (!message.fileId) throw new Error("media without file_id is not supported yet");
             const file = message.fileId;
-            const withCaption = { ...extra, caption: message.text ?? undefined };
+            const withCaption = { ...extra, caption: message.text ?? undefined, caption_entities: entities };
             switch (message.mediaKind) {
                 case MediaKinds.photo:
                     return telegram.sendPhoto(chatId, file, withCaption);
