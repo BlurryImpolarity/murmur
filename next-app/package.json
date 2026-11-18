@@ -1,0 +1,24 @@
+{
+    "name": "@murmur/next",
+    "version": "0.0.1",
+    "private": true,
+    "scripts": {
+        "dev": "next dev --turbopack",
+        "build": "next build",
+        "start": "next start",
+        "format": "prettier --write \"src/**/*.{ts,tsx}\"",
+        "format:check": "prettier --check \"src/**/*.{ts,tsx}\""
+    },
+    "dependencies": {
+        "@murmur/db": "*",
+        "drizzle-orm": "^0.45.4",
+        "next": "^16.4.6",
+        "react": "^19.3.1",
+        "react-dom": "^19.3.1"
+    },
+    "devDependencies": {
+        "@types/node": "^24.0.0",
+        "@types/react": "^19",
+        "@types/react-dom": "^19"
+    }
+}
