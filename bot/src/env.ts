@@ -16,4 +16,6 @@ export const env = {
     outboxMinIntervalMs: Number(process.env.OUTBOX_MIN_INTERVAL_MS || 500),
     // group where admins can reply via /reply, e.g. -1001234567890
     groupChatId: process.env.GROUP_CHAT_ID ? Number(process.env.GROUP_CHAT_ID) : undefined,
+    // how often admins get a summary of new messages; 0 or unset disables it
+    notifyIntervalMs: Number(process.env.NOTIFY_INTERVAL_MS || 0),
 };

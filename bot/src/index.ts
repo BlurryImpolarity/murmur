@@ -4,6 +4,7 @@ import { db } from "./db";
 import { adminComposer, loadAdmin } from "./admin";
 import { checkGroupChat } from "./group-reply";
 import { inbox } from "./inbox";
+import { startNotifier } from "./notifier";
 import { startOutbox } from "./outbox";
 import { installRateLimit } from "./rate-limit";
 import type { BotContext } from "./context";
@@ -22,9 +23,11 @@ bot.catch((err) => console.error("bot error", err));
 async function main() {
     await checkGroupChat(bot.telegram);
     const stopOutbox = await startOutbox(bot.telegram);
+    const stopNotifier = startNotifier(bot.telegram);
 
     const shutdown = async (signal: string) => {
         stopOutbox();
+        stopNotifier();
         bot.stop(signal);
         await db.$client.end();
     };
