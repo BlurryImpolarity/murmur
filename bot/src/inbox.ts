@@ -146,6 +146,12 @@ function parseMessage(message: Message): MessageContent | null {
             fileId: message.sticker.file_id,
             fileUniqueId: message.sticker.file_unique_id,
             fileSize: message.sticker.file_size ?? null,
+            // lets the web app pick img / video / emoji fallback
+            mimeType: message.sticker.is_video
+                ? "video/webm"
+                : message.sticker.is_animated
+                  ? "application/x-tgsticker"
+                  : "image/webp",
             stickerEmoji: message.sticker.emoji ?? null,
         };
     }
