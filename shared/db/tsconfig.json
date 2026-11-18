@@ -5,6 +5,7 @@
         "target": "ESNext",
         "module": "ESNext",
         "skipLibCheck": true,
+        "types": ["node"],
         "noEmit": true
     },
     "include": ["**/*.ts"]
