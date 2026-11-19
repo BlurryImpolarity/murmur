@@ -1,9 +1,11 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { eq } from "drizzle-orm";
+import { desc, eq } from "drizzle-orm";
 import {
     conversationsTable,
+    gifsTable,
+    MediaKinds,
     MessageDirections,
     messagesTable,
     MessageStatuses,
@@ -51,10 +53,36 @@ export type StickerCollection = {
     }[];
 };
 
-// Saved stickers for the composer picker: custom collections (favorites first), then packs
-export async function listStickerCollections(): Promise<StickerCollection[]> {
+export type SavedGif = {
+    id: string;
+    fileId: string;
+    thumbnailFileId: string | null;
+    width: number;
+    height: number;
+};
+
+// Everything the composer's media picker shows: saved GIFs (newest first) and sticker collections
+export async function listPickerMedia(): Promise<{ gifs: SavedGif[]; stickerCollections: StickerCollection[] }> {
     await requireAdmin();
 
+    const [gifs, stickerCollections] = await Promise.all([
+        db
+            .select({
+                id: gifsTable.id,
+                fileId: gifsTable.fileId,
+                thumbnailFileId: gifsTable.thumbnailFileId,
+                width: gifsTable.width,
+                height: gifsTable.height,
+            })
+            .from(gifsTable)
+            .orderBy(desc(gifsTable.createdAt)),
+        listStickerCollections(),
+    ]);
+    return { gifs, stickerCollections };
+}
+
+// Saved stickers: custom collections (favorites first), then packs
+async function listStickerCollections(): Promise<StickerCollection[]> {
     const collections = await db.query.stickerCollectionsTable.findMany({
         columns: { id: true, kind: true, name: true, title: true },
         with: {
@@ -88,6 +116,33 @@ export async function sendSticker(conversationId: string, stickerId: string) {
         fileUniqueId: sticker.fileUniqueId,
         mimeType: sticker.mimeType,
         stickerEmoji: sticker.emoji,
+        status: MessageStatuses.pending,
+    });
+    await db
+        .update(conversationsTable)
+        .set({ lastMessageAt: new Date() })
+        .where(eq(conversationsTable.id, conversationId));
+
+    revalidatePath("/", "layout");
+}
+
+// Queues a saved GIF as an outgoing animation
+export async function sendGif(conversationId: string, gifId: string) {
+    await requireAdmin();
+
+    const gif = await db.query.gifsTable.findFirst({ where: eq(gifsTable.id, gifId) });
+    if (!gif) throw new Error("GIF not found");
+
+    await db.insert(messagesTable).values({
+        conversationId,
+        direction: MessageDirections.outgoing,
+        type: MessageTypes.media,
+        mediaKind: MediaKinds.animation,
+        fileId: gif.fileId,
+        fileUniqueId: gif.fileUniqueId,
+        mimeType: gif.mimeType,
+        fileName: gif.fileName,
+        fileSize: gif.fileSize,
         status: MessageStatuses.pending,
     });
     await db

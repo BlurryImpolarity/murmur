@@ -4,8 +4,8 @@ import { useEffect, useRef, useState, useTransition } from "react";
 import { SendIcon, StickerIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import { StickerPicker } from "@/components/sticker-picker";
-import { sendSticker, sendTextMessage } from "@/app/(chat)/actions";
+import { MediaPicker, type PickedMedia } from "@/components/media-picker";
+import { sendGif, sendSticker, sendTextMessage } from "@/app/(chat)/actions";
 
 // Uncontrolled textarea: the value is read from the DOM on submit, so sending doesn't depend on React state.
 // `empty` only drives the button's disabled look and is re-synced from the DOM on mount and every input.
@@ -41,11 +41,12 @@ export function Composer({ conversationId, disabled }: { conversationId: string;
         });
     };
 
-    const submitSticker = (stickerId: string) => {
+    const submitMedia = (media: PickedMedia) => {
         setError(null);
         startTransition(async () => {
             try {
-                await sendSticker(conversationId, stickerId);
+                if (media.kind === "gif") await sendGif(conversationId, media.id);
+                else await sendSticker(conversationId, media.id);
             } catch (err) {
                 setError(err instanceof Error ? err.message : "Failed to send");
             }
@@ -60,7 +61,7 @@ export function Composer({ conversationId, disabled }: { conversationId: string;
             }}
             className="shrink-0 border-t"
         >
-            {stickersOpen && !disabled && <StickerPicker onSelect={submitSticker} />}
+            {stickersOpen && !disabled && <MediaPicker onSelect={submitMedia} />}
             {error && <p className="px-3 pt-2 text-xs text-destructive">{error}</p>}
             <div className="flex items-end gap-2 p-2 pb-[max(0.5rem,env(safe-area-inset-bottom))]">
                 <Button
@@ -68,7 +69,7 @@ export function Composer({ conversationId, disabled }: { conversationId: string;
                     size="icon-lg"
                     variant={stickersOpen ? "secondary" : "ghost"}
                     disabled={disabled}
-                    aria-label="Stickers"
+                    aria-label="Stickers and GIFs"
                     aria-pressed={stickersOpen}
                     onPointerDown={(event) => event.preventDefault()}
                     onClick={() => setStickersOpen((open) => !open)}

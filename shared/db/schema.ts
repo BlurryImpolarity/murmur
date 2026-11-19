@@ -253,6 +253,29 @@ export const stickersTable = pgTable(
 );
 export type StickersTable = typeof stickersTable;
 
+// ========= GIFS =========
+// Saved GIFs (telegram animations, usually mp4) admins can send later; a flat list like telegram's saved GIFs
+export const gifsTable = pgTable(
+    "gifs",
+    {
+        id: uuid().primaryKey().defaultRandom(),
+
+        fileId: varchar("file_id", { length: 256 }).notNull(),
+        fileUniqueId: varchar("file_unique_id", { length: 64 }).notNull().unique(),
+        // small static preview for pickers, when telegram provides one
+        thumbnailFileId: varchar("thumbnail_file_id", { length: 256 }),
+        mimeType: varchar("mime_type", { length: 128 }),
+        fileName: varchar("file_name", { length: 256 }),
+        fileSize: integer("file_size"),
+        width: integer().notNull(),
+        height: integer().notNull(),
+
+        createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    },
+    (table) => [index("gifs_created_idx").on(table.createdAt)]
+);
+export type GifsTable = typeof gifsTable;
+
 // ========= RELATIONS =========
 export const conversationsRelations = relations(conversationsTable, ({ many }) => ({
     messages: many(messagesTable),

@@ -6,6 +6,7 @@ import type { BotContext } from "./context";
 import { groupReply } from "./group-reply";
 import { clearPending } from "./pending";
 import { stickers } from "./stickers";
+import { gifs } from "./gifs";
 
 // Resolves ctx.admin by telegram user id
 export const loadAdmin: MiddlewareFn<BotContext> = async (ctx, next) => {
@@ -34,6 +35,11 @@ Stickers:
 /removesticker [collection] - remove the next sticker (default: from all your collections, packs untouched)
 /removecollection [name|link] - delete a collection or pack, or the pack of the next sticker (asks to /confirm)
 
+GIFs:
+/gifs - show how many GIFs are saved
+/addgif - save the next GIF
+/removegif - remove the next GIF
+
 People's messages are answered in the web app.`;
 
 adminComposer.start((ctx) => ctx.reply(`Admin mode, ${ctx.admin!.login}.\n\n${HELP}`));
@@ -51,9 +57,9 @@ adminComposer.command("stats", async (ctx) => {
     await ctx.reply(`Conversations: ${conversations.n}\nPending: ${pending.n}\nFailed: ${failed.n}`);
 });
 
-// drops whatever command is waiting (/reply, /addpack, /addsticker, /removesticker, /removecollection)
+// drops whatever command is waiting (/reply, sticker and GIF commands)
 adminComposer.command("cancel", (ctx) => ctx.reply(clearPending(ctx.from.id) ? "Cancelled" : "Nothing to cancel"));
 
-adminComposer.use(groupReply, stickers);
+adminComposer.use(groupReply, stickers, gifs);
 
 adminComposer.on("message", (ctx) => ctx.reply("Admin chat is not stored. Use the web app to reply to people"));

@@ -7,6 +7,8 @@ export type PendingAction =
     | { kind: "addSticker"; collection: string }
     // null: remove from every custom collection
     | { kind: "removeSticker"; collection: string | null }
+    | { kind: "addGif" }
+    | { kind: "removeGif" }
     // /removecollection without a name: waits for a sticker from the pack
     | { kind: "removePackBySticker" }
     // waits for /confirm instead of a message
