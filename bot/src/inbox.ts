@@ -12,6 +12,7 @@ import {
 } from "@murmur/db";
 import { and, eq } from "drizzle-orm";
 import { db } from "./db";
+import { stickerMimeType } from "./sticker-format";
 import type { BotContext } from "./context";
 
 type MessageContent = Pick<
@@ -55,6 +56,8 @@ inbox.on("message", async (ctx) => {
                       eq(messagesTable.conversationId, conversation.id),
                       eq(messagesTable.telegramMessageId, ctx.message.reply_to_message.message_id)
                   ),
+                  // ids can repeat after the chat history starts over; the newest one is the right one
+                  orderBy: (message, { desc }) => [desc(message.createdAt)],
               })
             : undefined;
 
@@ -147,11 +150,7 @@ function parseMessage(message: Message): MessageContent | null {
             fileUniqueId: message.sticker.file_unique_id,
             fileSize: message.sticker.file_size ?? null,
             // lets the web app pick img / video / emoji fallback
-            mimeType: message.sticker.is_video
-                ? "video/webm"
-                : message.sticker.is_animated
-                  ? "application/x-tgsticker"
-                  : "image/webp",
+            mimeType: stickerMimeType(message.sticker),
             stickerEmoji: message.sticker.emoji ?? null,
         };
     }

@@ -173,7 +173,13 @@ export const messagesTable = pgTable(
             .$onUpdateFn(() => new Date()),
     },
     (table) => [
-        unique("messages_conversation_telegram_message_unique").on(table.conversationId, table.telegramMessageId),
+        // dedupes telegram re-deliveries; the date is part of the key because message ids in a chat can start over
+        // (e.g. after the chat with the bot is deleted), and a new message must not collide with an old one
+        unique("messages_conversation_telegram_message_date_unique").on(
+            table.conversationId,
+            table.telegramMessageId,
+            table.createdAt
+        ),
         index("messages_conversation_created_idx").on(table.conversationId, table.createdAt),
         index("messages_pending_idx")
             .on(table.createdAt)
@@ -189,6 +195,87 @@ export const messagesTable = pgTable(
 );
 export type MessagesTable = typeof messagesTable;
 
+// ========= STICKERS =========
+// Saved stickers admins can send later: whole telegram packs or custom collections (favorites, uncategorized, ...)
+export const StickerCollectionKinds = {
+    pack: "pack", // imported telegram sticker set
+    custom: "custom",
+} as const;
+export type StickerCollectionKind = keyof typeof StickerCollectionKinds;
+
+export const stickerCollectionKindEnum = pgEnum("STICKER_COLLECTION_KIND", StickerCollectionKinds);
+
+export const stickerCollectionsTable = pgTable(
+    "sticker_collections",
+    {
+        id: uuid().primaryKey().defaultRandom(),
+
+        kind: stickerCollectionKindEnum().notNull(),
+        // telegram set name for packs, slug for custom collections (e.g. "favorites")
+        name: varchar({ length: 64 }).notNull(),
+        title: varchar({ length: 256 }).notNull(),
+
+        createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+        updatedAt: timestamp("updated_at", { withTimezone: true })
+            .notNull()
+            .defaultNow()
+            .$onUpdateFn(() => new Date()),
+    },
+    (table) => [unique("sticker_collections_kind_name_unique").on(table.kind, table.name)]
+);
+export type StickerCollectionsTable = typeof stickerCollectionsTable;
+
+export const stickersTable = pgTable(
+    "stickers",
+    {
+        id: uuid().primaryKey().defaultRandom(),
+        collectionId: uuid("collection_id")
+            .references(() => stickerCollectionsTable.id, { onDelete: "cascade" })
+            .notNull(),
+
+        fileId: varchar("file_id", { length: 256 }).notNull(),
+        fileUniqueId: varchar("file_unique_id", { length: 64 }).notNull(),
+        // image/webp, video/webm or application/x-tgsticker
+        mimeType: varchar("mime_type", { length: 64 }).notNull(),
+        // small static preview (webp/jpg) for pickers, when telegram provides one
+        thumbnailFileId: varchar("thumbnail_file_id", { length: 256 }),
+        emoji: varchar({ length: 16 }),
+        // telegram set the sticker comes from, if any
+        setName: varchar("set_name", { length: 64 }),
+        position: integer().notNull().default(0),
+
+        createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    },
+    (table) => [
+        unique("stickers_collection_file_unique").on(table.collectionId, table.fileUniqueId),
+        index("stickers_collection_position_idx").on(table.collectionId, table.position),
+    ]
+);
+export type StickersTable = typeof stickersTable;
+
+// ========= GIFS =========
+// Saved GIFs (telegram animations, usually mp4) admins can send later; a flat list like telegram's saved GIFs
+export const gifsTable = pgTable(
+    "gifs",
+    {
+        id: uuid().primaryKey().defaultRandom(),
+
+        fileId: varchar("file_id", { length: 256 }).notNull(),
+        fileUniqueId: varchar("file_unique_id", { length: 64 }).notNull().unique(),
+        // small static preview for pickers, when telegram provides one
+        thumbnailFileId: varchar("thumbnail_file_id", { length: 256 }),
+        mimeType: varchar("mime_type", { length: 128 }),
+        fileName: varchar("file_name", { length: 256 }),
+        fileSize: integer("file_size"),
+        width: integer().notNull(),
+        height: integer().notNull(),
+
+        createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    },
+    (table) => [index("gifs_created_idx").on(table.createdAt)]
+);
+export type GifsTable = typeof gifsTable;
+
 // ========= RELATIONS =========
 export const conversationsRelations = relations(conversationsTable, ({ many }) => ({
     messages: many(messagesTable),
@@ -202,5 +289,16 @@ export const messagesRelations = relations(messagesTable, ({ one }) => ({
     replyTo: one(messagesTable, {
         fields: [messagesTable.replyToId],
         references: [messagesTable.id],
+    }),
+}));
+
+export const stickerCollectionsRelations = relations(stickerCollectionsTable, ({ many }) => ({
+    stickers: many(stickersTable),
+}));
+
+export const stickersRelations = relations(stickersTable, ({ one }) => ({
+    collection: one(stickerCollectionsTable, {
+        fields: [stickersTable.collectionId],
+        references: [stickerCollectionsTable.id],
     }),
 }));

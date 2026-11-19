@@ -1,0 +1,1 @@
+ALTER TABLE "stickers" ADD COLUMN "thumbnail_file_id" varchar(256);

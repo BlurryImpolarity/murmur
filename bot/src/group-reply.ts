@@ -1,18 +1,15 @@
 import { Composer, type Telegram } from "telegraf-hardened";
 import type { MessageEntity } from "telegraf-hardened/types";
 import { env } from "./env";
+import { clearPending, getPending, setPending } from "./pending";
 import type { BotContext } from "./context";
 
 // Admin command to reply to a message in the group chat (GROUP_CHAT_ID) on behalf of the bot.
 //   /reply <link|id> <text>  - sends the text (formatting kept)
 //   /reply <link|id>         - the next message (any type) is copied into the group as the reply
-//   /cancel                  - drops a pending reply
+//   /cancel                  - drops a pending reply (handled in admin.ts)
 
-const PENDING_TTL_MS = 10 * 60 * 1000;
 const USAGE = "Usage: /reply <message link or id> [text]\nWithout text, the next message you send becomes the reply.";
-
-// admin telegram user id -> group message to reply to
-const pending = new Map<number, { messageId: number; expiresAt: number }>();
 
 export const groupReply = new Composer<BotContext>();
 
@@ -29,7 +26,7 @@ groupReply.command("reply", async (ctx) => {
     const textStart = match[0].length;
     const text = ctx.message.text.slice(textStart);
     if (!text) {
-        pending.set(ctx.from.id, { messageId: target, expiresAt: Date.now() + PENDING_TTL_MS });
+        setPending(ctx.from.id, { kind: "groupReply", messageId: target });
         return ctx.reply("Send the reply or /cancel to abort");
     }
 
@@ -45,21 +42,16 @@ groupReply.command("reply", async (ctx) => {
     );
 });
 
-groupReply.command("cancel", (ctx) =>
-    ctx.reply(pending.delete(ctx.from.id) ? "Reply cancelled" : "Nothing to cancel")
-);
-
 // second step: copy whatever the admin sent as the reply
 groupReply.on("message", async (ctx, next) => {
-    const entry = pending.get(ctx.from.id);
+    const action = getPending(ctx.from.id);
     // commands are never sent to the group by accident
-    if (!entry || ("text" in ctx.message && ctx.message.text.startsWith("/"))) return next();
-    pending.delete(ctx.from.id);
-    if (entry.expiresAt < Date.now()) return next();
+    if (action?.kind !== "groupReply" || ("text" in ctx.message && ctx.message.text.startsWith("/"))) return next();
+    clearPending(ctx.from.id);
 
     await deliver(ctx, () =>
         ctx.telegram.copyMessage(env.groupChatId!, ctx.chat.id, ctx.message.message_id, {
-            reply_parameters: { message_id: entry.messageId, allow_sending_without_reply: false },
+            reply_parameters: { message_id: action.messageId, allow_sending_without_reply: false },
         })
     );
 });
