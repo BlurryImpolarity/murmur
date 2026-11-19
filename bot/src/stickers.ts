@@ -1,7 +1,7 @@
 import { Composer } from "telegraf-hardened";
 import type { Sticker } from "telegraf-hardened/types";
 import { StickerCollectionKinds, stickerCollectionsTable, stickersTable } from "@murmur/db";
-import { count, eq, sql } from "drizzle-orm";
+import { and, count, eq, inArray, notExists, or, sql, type SQL } from "drizzle-orm";
 import { db } from "./db";
 import { clearPending, getPending, setPending } from "./pending";
 import { stickerMimeType } from "./sticker-format";
@@ -11,6 +11,8 @@ import type { BotContext } from "./context";
 //   /addpack [name|t.me/addstickers/link]  - imports the whole pack (or of the next sticker sent); re-adding refreshes it
 //   /addsticker [collection]               - saves the next sticker to a custom collection (default: uncategorized)
 //   /stickers                              - lists saved packs and collections
+//   /removesticker [collection]            - removes the next sticker from a collection/pack (default: all custom ones)
+//   /removecollection [name|link]          - deletes a collection or pack (or the pack of the next sticker) after /confirm
 
 const DEFAULT_COLLECTION = "uncategorized";
 const COLLECTION_ALIASES: Record<string, string> = {
@@ -71,10 +73,53 @@ stickers.command("stickers", async (ctx) => {
     );
 });
 
-// second step of /addpack and /addsticker
+stickers.command("removesticker", async (ctx) => {
+    const arg = ctx.payload.trim();
+    if (!arg) {
+        setPending(ctx.from.id, { kind: "removeSticker", collection: null });
+        return ctx.reply("Send the sticker to remove from your collections or /cancel to abort");
+    }
+    const [collection, ...more] = await findCollections(arg);
+    if (!collection) return ctx.reply(`No collection or pack "${arg}". See /stickers`);
+    if (more.length) return ctx.reply(`"${arg}" matches both a collection and a pack, use the pack link instead`);
+    setPending(ctx.from.id, { kind: "removeSticker", collection: collection.id });
+    await ctx.reply(`Send the sticker to remove from "${collection.title}" or /cancel to abort`);
+});
+
+stickers.command("removecollection", async (ctx) => {
+    const arg = ctx.payload.trim();
+    if (!arg) {
+        setPending(ctx.from.id, { kind: "removePackBySticker" });
+        return ctx.reply("Send a sticker from the pack to remove or /cancel to abort");
+    }
+    const collections = await findCollections(arg);
+    if (!collections.length) return ctx.reply(`No collection or pack "${arg}". See /stickers`);
+    await askToConfirmRemoval(ctx, collections);
+});
+
+async function askToConfirmRemoval(ctx: BotContext, collections: Awaited<ReturnType<typeof findCollections>>) {
+    const label = collections
+        .map((c) => `"${c.title}" (${c.kind}, ${c.stickers} ${c.stickers === 1 ? "sticker" : "stickers"})`)
+        .join(" and ");
+    setPending(ctx.from!.id, { kind: "removeCollection", collectionIds: collections.map((c) => c.id), label });
+    await ctx.reply(`Remove ${label}? Send /confirm to remove or /cancel to keep it`);
+}
+
+stickers.command("confirm", async (ctx) => {
+    const action = getPending(ctx.from.id);
+    if (action?.kind !== "removeCollection") return ctx.reply("Nothing to confirm");
+    clearPending(ctx.from.id);
+    // stickers go with it (on delete cascade)
+    await db.delete(stickerCollectionsTable).where(inArray(stickerCollectionsTable.id, action.collectionIds));
+    await ctx.reply(`Removed ${action.label}`);
+});
+
+const WAITING_FOR_STICKER = new Set(["addPack", "addSticker", "removeSticker", "removePackBySticker"]);
+
+// second step of /addpack, /addsticker, /removesticker and /removecollection without a name
 stickers.on("message", async (ctx, next) => {
     const action = getPending(ctx.from.id);
-    if (action?.kind !== "addPack" && action?.kind !== "addSticker") return next();
+    if (!action || !WAITING_FOR_STICKER.has(action.kind)) return next();
 
     if (!("sticker" in ctx.message)) {
         // commands go through, anything else is a mistake
@@ -88,6 +133,14 @@ stickers.on("message", async (ctx, next) => {
         if (!sticker.set_name) return ctx.reply("This sticker isn't part of a pack");
         return importPack(ctx, sticker.set_name);
     }
+    if (action.kind === "removeSticker") return removeSticker(ctx, action.collection, sticker);
+    if (action.kind === "removePackBySticker") {
+        if (!sticker.set_name) return ctx.reply("This sticker isn't part of a pack");
+        const packs = (await findCollections(sticker.set_name)).filter((c) => c.kind === StickerCollectionKinds.pack);
+        if (!packs.length) return ctx.reply("This sticker's pack isn't saved. See /stickers");
+        return askToConfirmRemoval(ctx, packs);
+    }
+    if (action.kind !== "addSticker") return;
     await addSticker(ctx, action.collection, sticker);
 });
 
@@ -173,4 +226,82 @@ function normalizeCollection(arg: string): string | null {
 
 function collectionTitle(name: string): string {
     return COLLECTION_TITLES[name] ?? name;
+}
+
+async function removeSticker(ctx: BotContext, collectionId: string | null, sticker: Sticker) {
+    const scope = collectionId
+        ? eq(stickersTable.collectionId, collectionId)
+        : inArray(
+              stickersTable.collectionId,
+              db
+                  .select({ id: stickerCollectionsTable.id })
+                  .from(stickerCollectionsTable)
+                  .where(eq(stickerCollectionsTable.kind, StickerCollectionKinds.custom))
+          );
+    const removed = await db
+        .delete(stickersTable)
+        .where(and(eq(stickersTable.fileUniqueId, sticker.file_unique_id), scope))
+        .returning({ collectionId: stickersTable.collectionId });
+    if (!removed.length)
+        return ctx.reply(
+            collectionId ? "That sticker isn't in this collection" : "That sticker isn't in any of your collections"
+        );
+
+    // custom collections left empty are dropped; packs stay until /removecollection
+    const affectedIds = removed.map((row) => row.collectionId);
+    const titles = await db
+        .select({ title: stickerCollectionsTable.title })
+        .from(stickerCollectionsTable)
+        .where(inArray(stickerCollectionsTable.id, affectedIds));
+    await db
+        .delete(stickerCollectionsTable)
+        .where(
+            and(
+                inArray(stickerCollectionsTable.id, affectedIds),
+                eq(stickerCollectionsTable.kind, StickerCollectionKinds.custom),
+                notExists(
+                    db
+                        .select({ id: stickersTable.id })
+                        .from(stickersTable)
+                        .where(eq(stickersTable.collectionId, stickerCollectionsTable.id))
+                )
+            )
+        );
+    await ctx.reply(`Removed from ${titles.map((row) => `"${row.title}"`).join(", ")}`);
+}
+
+// matches a custom collection by name/alias and a pack by set name or link (case-insensitive)
+async function findCollections(arg: string) {
+    const customName = normalizeCollection(arg);
+    const setName = parseSetName(arg);
+    const conditions: SQL[] = [];
+    if (customName) {
+        conditions.push(
+            and(
+                eq(stickerCollectionsTable.kind, StickerCollectionKinds.custom),
+                eq(stickerCollectionsTable.name, customName)
+            )!
+        );
+    }
+    if (setName) {
+        conditions.push(
+            and(
+                eq(stickerCollectionsTable.kind, StickerCollectionKinds.pack),
+                sql`lower(${stickerCollectionsTable.name}) = lower(${setName})`
+            )!
+        );
+    }
+    if (!conditions.length) return [];
+
+    return db
+        .select({
+            id: stickerCollectionsTable.id,
+            kind: stickerCollectionsTable.kind,
+            title: stickerCollectionsTable.title,
+            stickers: count(stickersTable.id),
+        })
+        .from(stickerCollectionsTable)
+        .leftJoin(stickersTable, eq(stickersTable.collectionId, stickerCollectionsTable.id))
+        .where(or(...conditions))
+        .groupBy(stickerCollectionsTable.id);
 }

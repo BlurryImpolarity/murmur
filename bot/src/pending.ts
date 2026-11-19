@@ -2,7 +2,15 @@
 // Starting a new one replaces the previous; /cancel clears it.
 
 export type PendingAction =
-    { kind: "groupReply"; messageId: number } | { kind: "addPack" } | { kind: "addSticker"; collection: string };
+    | { kind: "groupReply"; messageId: number }
+    | { kind: "addPack" }
+    | { kind: "addSticker"; collection: string }
+    // null: remove from every custom collection
+    | { kind: "removeSticker"; collection: string | null }
+    // /removecollection without a name: waits for a sticker from the pack
+    | { kind: "removePackBySticker" }
+    // waits for /confirm instead of a message
+    | { kind: "removeCollection"; collectionIds: string[]; label: string };
 
 const TTL_MS = 10 * 60 * 1000;
 const actions = new Map<number, { action: PendingAction; expiresAt: number }>();

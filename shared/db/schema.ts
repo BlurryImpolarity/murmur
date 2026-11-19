@@ -173,7 +173,13 @@ export const messagesTable = pgTable(
             .$onUpdateFn(() => new Date()),
     },
     (table) => [
-        unique("messages_conversation_telegram_message_unique").on(table.conversationId, table.telegramMessageId),
+        // dedupes telegram re-deliveries; the date is part of the key because message ids in a chat can start over
+        // (e.g. after the chat with the bot is deleted), and a new message must not collide with an old one
+        unique("messages_conversation_telegram_message_date_unique").on(
+            table.conversationId,
+            table.telegramMessageId,
+            table.createdAt
+        ),
         index("messages_conversation_created_idx").on(table.conversationId, table.createdAt),
         index("messages_pending_idx")
             .on(table.createdAt)

@@ -1,0 +1,2 @@
+ALTER TABLE "messages" DROP CONSTRAINT "messages_conversation_telegram_message_unique";--> statement-breakpoint
+ALTER TABLE "messages" ADD CONSTRAINT "messages_conversation_telegram_message_date_unique" UNIQUE("conversation_id","telegram_message_id","created_at");

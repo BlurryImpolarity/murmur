@@ -56,6 +56,8 @@ inbox.on("message", async (ctx) => {
                       eq(messagesTable.conversationId, conversation.id),
                       eq(messagesTable.telegramMessageId, ctx.message.reply_to_message.message_id)
                   ),
+                  // ids can repeat after the chat history starts over; the newest one is the right one
+                  orderBy: (message, { desc }) => [desc(message.createdAt)],
               })
             : undefined;
 

@@ -18,11 +18,27 @@ export const loadAdmin: MiddlewareFn<BotContext> = async (ctx, next) => {
 // Admin chats are handled here and never stored in conversations
 export const adminComposer = new Composer<BotContext>();
 
-adminComposer.start((ctx) =>
-    ctx.reply(
-        `Admin mode, ${ctx.admin!.login}. Commands: /ping, /stats, /reply, /addpack, /addsticker, /stickers, /cancel`
-    )
-);
+const HELP = `Admin commands:
+/help - this message
+/ping - check the bot is alive
+/stats - conversations and delivery stats
+/cancel - cancel a command waiting for your next message
+
+Group chat:
+/reply <link|id> [text] - reply to a group message as the bot; without text, your next message is sent
+
+Stickers:
+/stickers - list saved collections and packs
+/addpack [name|link] - save a whole pack (or send a sticker from it next)
+/addsticker [collection] - save the next sticker (default: uncategorized, "fav" = favorites)
+/removesticker [collection] - remove the next sticker (default: from all your collections, packs untouched)
+/removecollection [name|link] - delete a collection or pack, or the pack of the next sticker (asks to /confirm)
+
+People's messages are answered in the web app.`;
+
+adminComposer.start((ctx) => ctx.reply(`Admin mode, ${ctx.admin!.login}.\n\n${HELP}`));
+
+adminComposer.help((ctx) => ctx.reply(HELP));
 
 adminComposer.command("ping", (ctx) => ctx.reply(`Pong (admin: ${ctx.admin!.login})`));
 
@@ -35,7 +51,7 @@ adminComposer.command("stats", async (ctx) => {
     await ctx.reply(`Conversations: ${conversations.n}\nPending: ${pending.n}\nFailed: ${failed.n}`);
 });
 
-// drops whatever command is waiting for the next message (/reply, /addpack, /addsticker)
+// drops whatever command is waiting (/reply, /addpack, /addsticker, /removesticker, /removecollection)
 adminComposer.command("cancel", (ctx) => ctx.reply(clearPending(ctx.from.id) ? "Cancelled" : "Nothing to cancel"));
 
 adminComposer.use(groupReply, stickers);
