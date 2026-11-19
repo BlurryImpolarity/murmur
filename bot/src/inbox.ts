@@ -35,13 +35,13 @@ export const inbox = new Composer<BotContext>();
 
 inbox.start(async (ctx) => {
     await upsertConversation(ctx);
-    await ctx.reply("Hi! Send your message here and you'll get a reply in this chat.");
+    await ctx.reply("Привіт! Просто спілкуйся зі мною як зі звичайним чатом");
 });
 
 inbox.on("message", async (ctx) => {
     const content = parseMessage(ctx.message);
     if (!content) {
-        await ctx.reply("This message type is not supported. Send text, media, a file or a sticker.");
+        await ctx.reply("Повідомлення такого типу наразі не підтримуються. Надішли текст, медіа, файл, стікер або гіф");
         return;
     }
 

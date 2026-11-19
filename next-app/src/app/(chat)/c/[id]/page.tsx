@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Composer } from "@/components/composer";
 import { MessageBubble } from "@/components/message-bubble";
+import { ReplyProvider } from "@/components/reply-context";
 import { UserAvatar } from "@/components/user-avatar";
 import { requireAdmin } from "@/lib/auth";
 import { db } from "@/lib/db";
@@ -46,8 +47,10 @@ export default async function ConversationPage({ params }: { params: Promise<{ i
         ? `https://t.me/${conversation.username}`
         : `tg://user?id=${conversation.telegramUserId}`;
 
+    const name = displayName(conversation);
+
     return (
-        <>
+        <ReplyProvider key={conversation.id}>
             <header className="flex h-14 shrink-0 items-center gap-3 border-b px-3">
                 <Button
                     variant="ghost"
@@ -62,7 +65,7 @@ export default async function ConversationPage({ params }: { params: Promise<{ i
                 <UserAvatar conversation={conversation} />
                 <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2">
-                        <span className="truncate text-sm font-medium">{displayName(conversation)}</span>
+                        <span className="truncate text-sm font-medium">{name}</span>
                         {conversation.status !== "active" && <Badge variant="outline">{conversation.status}</Badge>}
                     </div>
                     <a
@@ -79,7 +82,7 @@ export default async function ConversationPage({ params }: { params: Promise<{ i
             </header>
             <div className="flex flex-1 flex-col-reverse gap-2 overflow-y-auto p-3">
                 {messages.map((message) => (
-                    <MessageBubble key={message.id} message={message} />
+                    <MessageBubble key={message.id} message={message} contactName={name} />
                 ))}
                 {messages.length === MESSAGES_LIMIT && (
                     <p className="text-center text-xs text-muted-foreground">Showing last {MESSAGES_LIMIT} messages</p>
@@ -90,6 +93,6 @@ export default async function ConversationPage({ params }: { params: Promise<{ i
                 conversationId={conversation.id}
                 disabled={conversation.status === "blocked"}
             />
-        </>
+        </ReplyProvider>
     );
 }

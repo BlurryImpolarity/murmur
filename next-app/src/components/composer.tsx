@@ -1,10 +1,11 @@
 "use client";
 
 import { useEffect, useRef, useState, useTransition } from "react";
-import { SendIcon, StickerIcon } from "lucide-react";
+import { ReplyIcon, SendIcon, StickerIcon, XIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { MediaPicker, type PickedMedia } from "@/components/media-picker";
+import { useReply } from "@/components/reply-context";
 import { sendGif, sendSticker, sendTextMessage } from "@/app/(chat)/actions";
 
 // Uncontrolled textarea: the value is read from the DOM on submit, so sending doesn't depend on React state.
@@ -14,7 +15,13 @@ export function Composer({ conversationId, disabled }: { conversationId: string;
     const [error, setError] = useState<string | null>(null);
     const [empty, setEmpty] = useState(true);
     const [stickersOpen, setStickersOpen] = useState(false);
+    const { target: replyTarget, setTarget: setReplyTarget } = useReply();
     const syncEmpty = () => setEmpty(!textarea.current?.value.trim());
+
+    // jump into the input as soon as a message is picked to reply to
+    useEffect(() => {
+        if (replyTarget) textarea.current?.focus();
+    }, [replyTarget]);
 
     // picks up text typed before hydration
     useEffect(syncEmpty, []);
@@ -27,28 +34,36 @@ export function Composer({ conversationId, disabled }: { conversationId: string;
 
         // clear right away so the next message can be typed while this one is being queued;
         // next.js runs server actions sequentially, so order is preserved
+        const replyTo = replyTarget;
         element.value = "";
         setEmpty(true);
         setError(null);
+        setReplyTarget(null);
         startTransition(async () => {
             try {
-                await sendTextMessage(conversationId, value);
+                await sendTextMessage(conversationId, value, replyTo?.id);
             } catch (err) {
                 setError(err instanceof Error ? err.message : "Failed to send");
-                if (!element.value) element.value = value;
+                if (!element.value) {
+                    element.value = value;
+                    setReplyTarget(replyTo);
+                }
                 syncEmpty();
             }
         });
     };
 
     const submitMedia = (media: PickedMedia) => {
+        const replyTo = replyTarget;
         setError(null);
+        setReplyTarget(null);
         startTransition(async () => {
             try {
-                if (media.kind === "gif") await sendGif(conversationId, media.id);
-                else await sendSticker(conversationId, media.id);
+                if (media.kind === "gif") await sendGif(conversationId, media.id, replyTo?.id);
+                else await sendSticker(conversationId, media.id, replyTo?.id);
             } catch (err) {
                 setError(err instanceof Error ? err.message : "Failed to send");
+                setReplyTarget(replyTo);
             }
         });
     };
@@ -63,6 +78,25 @@ export function Composer({ conversationId, disabled }: { conversationId: string;
         >
             {stickersOpen && !disabled && <MediaPicker onSelect={submitMedia} />}
             {error && <p className="px-3 pt-2 text-xs text-destructive">{error}</p>}
+            {replyTarget && !disabled && (
+                <div className="flex items-center gap-2 px-3 pt-2">
+                    <ReplyIcon className="size-4 shrink-0 text-primary" />
+                    <div className="min-w-0 flex-1 border-l-2 border-primary pl-2 text-xs">
+                        <div className="font-medium text-primary">Reply to {replyTarget.author}</div>
+                        <div className="truncate text-muted-foreground">{replyTarget.preview}</div>
+                    </div>
+                    <Button
+                        type="button"
+                        size="icon-sm"
+                        variant="ghost"
+                        aria-label="Cancel reply"
+                        onPointerDown={(event) => event.preventDefault()}
+                        onClick={() => setReplyTarget(null)}
+                    >
+                        <XIcon />
+                    </Button>
+                </div>
+            )}
             <div className="flex items-end gap-2 p-2 pb-[max(0.5rem,env(safe-area-inset-bottom))]">
                 <Button
                     type="button"
@@ -80,6 +114,11 @@ export function Composer({ conversationId, disabled }: { conversationId: string;
                     ref={textarea}
                     onInput={syncEmpty}
                     onKeyDown={(event) => {
+                        if (event.key === "Escape" && replyTarget) {
+                            event.preventDefault();
+                            setReplyTarget(null);
+                            return;
+                        }
                         // Enter sends on desktop; on touch devices Enter inserts a newline
                         const finePointer = window.matchMedia("(pointer: fine)").matches;
                         if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing && finePointer) {

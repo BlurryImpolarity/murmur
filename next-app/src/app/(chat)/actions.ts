@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { desc, eq } from "drizzle-orm";
+import { and, desc, eq, isNotNull } from "drizzle-orm";
 import {
     conversationsTable,
     gifsTable,
@@ -18,8 +18,23 @@ import { requireAdmin } from "@/lib/auth";
 
 const MAX_TEXT_LENGTH = 4096; // telegram limit
 
+// Validates a reply target: it must be a delivered message from the same conversation
+async function resolveReplyTo(conversationId: string, replyToId: string | null | undefined): Promise<string | null> {
+    if (!replyToId) return null;
+    const target = await db.query.messagesTable.findFirst({
+        columns: { id: true },
+        where: and(
+            eq(messagesTable.id, replyToId),
+            eq(messagesTable.conversationId, conversationId),
+            isNotNull(messagesTable.telegramMessageId)
+        ),
+    });
+    if (!target) throw new Error("The message you're replying to is no longer available");
+    return target.id;
+}
+
 // Queues a text message; the bot picks up `pending` messages and delivers them
-export async function sendTextMessage(conversationId: string, text: string) {
+export async function sendTextMessage(conversationId: string, text: string, replyToId?: string | null) {
     await requireAdmin();
 
     const body = text.trim();
@@ -28,6 +43,7 @@ export async function sendTextMessage(conversationId: string, text: string) {
 
     await db.insert(messagesTable).values({
         conversationId,
+        replyToId: await resolveReplyTo(conversationId, replyToId),
         direction: MessageDirections.outgoing,
         type: MessageTypes.text,
         text: body,
@@ -102,7 +118,7 @@ async function listStickerCollections(): Promise<StickerCollection[]> {
 }
 
 // Queues a saved sticker as an outgoing message
-export async function sendSticker(conversationId: string, stickerId: string) {
+export async function sendSticker(conversationId: string, stickerId: string, replyToId?: string | null) {
     await requireAdmin();
 
     const sticker = await db.query.stickersTable.findFirst({ where: eq(stickersTable.id, stickerId) });
@@ -110,6 +126,7 @@ export async function sendSticker(conversationId: string, stickerId: string) {
 
     await db.insert(messagesTable).values({
         conversationId,
+        replyToId: await resolveReplyTo(conversationId, replyToId),
         direction: MessageDirections.outgoing,
         type: MessageTypes.sticker,
         fileId: sticker.fileId,
@@ -127,7 +144,7 @@ export async function sendSticker(conversationId: string, stickerId: string) {
 }
 
 // Queues a saved GIF as an outgoing animation
-export async function sendGif(conversationId: string, gifId: string) {
+export async function sendGif(conversationId: string, gifId: string, replyToId?: string | null) {
     await requireAdmin();
 
     const gif = await db.query.gifsTable.findFirst({ where: eq(gifsTable.id, gifId) });
@@ -135,6 +152,7 @@ export async function sendGif(conversationId: string, gifId: string) {
 
     await db.insert(messagesTable).values({
         conversationId,
+        replyToId: await resolveReplyTo(conversationId, replyToId),
         direction: MessageDirections.outgoing,
         type: MessageTypes.media,
         mediaKind: MediaKinds.animation,
